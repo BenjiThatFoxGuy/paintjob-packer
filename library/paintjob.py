@@ -301,6 +301,17 @@ def make_vehicle_folder(output_path, veh, ingame_name):
     else:
         make_folder(output_path, "vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
 
+def _should_overwrite_zip_entry(zip_file, entry_name, dst, keep_modified):
+    """Return True if a zip entry should be extracted to dst.
+    When keep_modified is True, an existing dst that differs from the zip entry is preserved."""
+    if not keep_modified:
+        return True
+    if not os.path.exists(dst):
+        return True
+    zip_bytes = zip_file.read(entry_name)
+    with open(dst, "rb") as f:
+        return f.read() == zip_bytes
+
 def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip, keep_modified=False):
     copy_square = False
 
@@ -309,20 +320,12 @@ def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip, ke
             if main_dds_name+".dds" in template_zip.namelist():
                 if veh.mod:
                     dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author)
                 else:
                     dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name)
-                if keep_modified and os.path.exists(dst):
-                    zip_bytes = template_zip.read(main_dds_name+".dds")
-                    with open(dst, "rb") as f:
-                        if f.read() != zip_bytes:
-                            pass  # Skip: user has modified this file
-                        else:
-                            template_zip.extract(main_dds_name+".dds", os.path.dirname(dst))
-                else:
-                    if veh.mod:
-                        template_zip.extract(main_dds_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
-                    else:
-                        template_zip.extract(main_dds_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name)
+                if _should_overwrite_zip_entry(template_zip, main_dds_name+".dds", dst, keep_modified):
+                    template_zip.extract(main_dds_name+".dds", extract_dir)
             elif veh.type == "truck": # Largest cabin only paint jobs
                 if veh.alt_uvset:
                     largest_cabin_name = veh.cabins["a"][0][:-1]+", alt uvset).dds"
@@ -330,26 +333,13 @@ def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip, ke
                     largest_cabin_name = veh.cabins["a"][0]+".dds"
                 if veh.mod:
                     dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name)
-                    if keep_modified and os.path.exists(dst):
-                        zip_bytes = template_zip.read(largest_cabin_name)
-                        with open(dst, "rb") as f:
-                            if f.read() == zip_bytes:
-                                template_zip.extract(largest_cabin_name, output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
-                                os.rename(output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}".format(veh.type, ingame_name, veh.name, veh.mod_author, largest_cabin_name), dst)
-                    else:
-                        template_zip.extract(largest_cabin_name, output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
-                        os.rename(output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}".format(veh.type, ingame_name, veh.name, veh.mod_author, largest_cabin_name), dst)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author)
                 else:
                     dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name)
-                    if keep_modified and os.path.exists(dst):
-                        zip_bytes = template_zip.read(largest_cabin_name)
-                        with open(dst, "rb") as f:
-                            if f.read() == zip_bytes:
-                                template_zip.extract(largest_cabin_name, output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
-                                os.rename(output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}".format(veh.type, ingame_name, veh.name, largest_cabin_name), dst)
-                    else:
-                        template_zip.extract(largest_cabin_name, output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
-                        os.rename(output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}".format(veh.type, ingame_name, veh.name, largest_cabin_name), dst)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name)
+                if _should_overwrite_zip_entry(template_zip, largest_cabin_name, dst, keep_modified):
+                    template_zip.extract(largest_cabin_name, extract_dir)
+                    os.rename(os.path.join(extract_dir, largest_cabin_name), dst)
             else:
                 copy_square = True
         else:
@@ -374,17 +364,12 @@ def copy_accessory_dds(output_path, veh, ingame_name, game, template_zip, keep_m
             if acc_name+".dds" in template_zip.namelist():
                 if veh.mod:
                     dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, acc_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author)
                 else:
                     dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, acc_name)
-                if keep_modified and os.path.exists(dst):
-                    zip_bytes = template_zip.read(acc_name+".dds")
-                    with open(dst, "rb") as f:
-                        if f.read() != zip_bytes:
-                            continue  # Skip: user has modified this file
-                if veh.mod:
-                    template_zip.extract(acc_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
-                else:
-                    template_zip.extract(acc_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name)
+                if _should_overwrite_zip_entry(template_zip, acc_name+".dds", dst, keep_modified):
+                    template_zip.extract(acc_name+".dds", extract_dir)
             else:
                 copy_square = True
         else:
