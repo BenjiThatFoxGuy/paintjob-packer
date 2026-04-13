@@ -7,6 +7,7 @@ import sys # Determining OS, and quitting Paint Job Packer
 import configparser # Reading vehicle database files, version info and l10n dictionary
 import os # Making folders and getting all vehicle database files
 import shutil # Copying files (checking write permission, all actual copying occurs in paintjob.py)
+import filecmp # Comparing files to detect user modifications
 import re # Checking for invalid characters in mod/paint job names
 import traceback # Handling unexpected errors
 import zipfile # Unzipping templates
@@ -1271,11 +1272,16 @@ class PackerApp:
         if save_directory != "":
             output_path = save_directory + "/Paint Job Packer Output"
             folder_clear = True
+            keep_modified = False
             if os.path.exists(output_path):
                 if len(os.listdir(output_path)) > 0:
-                    folder_clear = False
-                    # I don't want to be on the receiving end of an irate user who lost their important report the night before it was due, because they happened to store it in the Paint Job Packer folder
-                    messagebox.showerror(title = l("{ErrorFolderClearTitle}"), message = l("{ErrorFolderClear1}\n\n{ErrorFolderClear2}").format(folder_name = "\"Paint Job Packer Output\""))
+                    result = messagebox.askyesnocancel(title = l("{FolderExistsTitle}"), message = l("{FolderExists1}\n\n{FolderExists2}").format(folder_name = "\"Paint Job Packer Output\""))
+                    if result is True:
+                        keep_modified = False # Overwrite all existing files
+                    elif result is False:
+                        keep_modified = True # Keep files that appear to have been modified
+                    else:
+                        folder_clear = False # Cancel - abort generation
             try:
                 shutil.copyfile("library/placeholder-files/empty.dds", save_directory + "/empty.dds")
                 os.remove(save_directory + "/empty.dds")
@@ -1286,7 +1292,7 @@ class PackerApp:
                 # Disable the button to stop people clicking it a second time
                 self.panel_gen_buttons_generate.state(["disabled"])
                 try:
-                    self.make_paintjob(output_path)
+                    self.make_paintjob(output_path, keep_modified)
                 except PermissionError:
                     # Caused for some reason by copying the mod manager image
                     try:
@@ -1333,7 +1339,7 @@ class PackerApp:
 
 
 
-    def make_paintjob(self, output_path):
+    def make_paintjob(self, output_path, keep_modified=False):
         try:
             l = self.get_localised_string
             truck_list = []
@@ -1457,7 +1463,7 @@ class PackerApp:
 
             self.panel_progress_specific_variable.set("Mod manager image")
             self.panel_progress_specific_label.update()
-            pj.copy_mod_manager_image(out_path)
+            pj.copy_mod_manager_image(out_path, keep_modified)
 
             self.panel_progress_specific_variable.set("Mod manager description")
             self.panel_progress_specific_label.update()
@@ -1467,7 +1473,7 @@ class PackerApp:
 
             self.panel_progress_specific_variable.set("Paint job icon")
             self.panel_progress_specific_label.update()
-            pj.copy_paintjob_icon(out_path, ingame_name)
+            pj.copy_paintjob_icon(out_path, ingame_name, keep_modified)
 
             pj.make_paintjob_icon_tobj(out_path, ingame_name)
 
@@ -1518,7 +1524,7 @@ class PackerApp:
                                 pj.make_def_sii(out_path, veh, paintjob_name, internal_name, one_paintjob, ingame_name, main_dds_name, cab_internal_name)
                     else:
                         pj.make_def_sii(out_path, veh, paintjob_name, internal_name, one_paintjob, ingame_name, main_dds_name)
-                    pj.copy_main_dds(out_path, veh, ingame_name, main_dds_name, template_zip)
+                    pj.copy_main_dds(out_path, veh, ingame_name, main_dds_name, template_zip, keep_modified)
                     pj.make_main_tobj(out_path, veh, ingame_name, main_dds_name)
                     if veh.uses_accessories:
                         pj.make_accessory_sii(out_path, veh, ingame_name, paintjob_name)
@@ -1538,14 +1544,14 @@ class PackerApp:
                             if "/" in cab_internal_name:
                                 cab_internal_name = cab_internal_name.split("/") # For when multiple cabins can use the same template, e.g. Western Star 49X
                             pj.make_def_sii(out_path, veh, paintjob_name, internal_name, one_paintjob, ingame_name, main_dds_name, cab_internal_name)
-                            pj.copy_main_dds(out_path, veh, ingame_name, main_dds_name, template_zip)
+                            pj.copy_main_dds(out_path, veh, ingame_name, main_dds_name, template_zip, keep_modified)
                             pj.make_main_tobj(out_path, veh, ingame_name, main_dds_name)
                             if veh.uses_accessories:
                                 pj.make_accessory_sii(out_path, veh, ingame_name, paintjob_name)
                 if veh.uses_accessories:
                     self.panel_progress_specific_variable.set("Accessories")
                     self.panel_progress_specific_label.update()
-                    pj.copy_accessory_dds(out_path, veh, ingame_name, game, template_zip)
+                    pj.copy_accessory_dds(out_path, veh, ingame_name, game, template_zip, keep_modified)
                     pj.make_accessory_tobj(out_path, veh, ingame_name)
 
                 if template_zip != None:
@@ -1555,10 +1561,10 @@ class PackerApp:
                 self.progress_value.set(self.progress_value.get()+1.0)
                 self.panel_progress_category_variable.set("Workshop files")
                 self.panel_progress_specific_label.update()
-                pj.copy_versions_sii(output_path+"/Workshop uploading")
+                pj.copy_versions_sii(output_path+"/Workshop uploading", keep_modified)
                 self.panel_progress_specific_variable.set("Workshop image")
                 self.panel_progress_specific_label.update()
-                pj.copy_workshop_image(output_path)
+                pj.copy_workshop_image(output_path, keep_modified)
                 self.panel_progress_specific_variable.set("Workshop readme")
                 self.panel_progress_specific_label.update()
                 self.make_workshop_readme(output_path, truck_list, truck_mod_list, bus_mod_list, trailer_list, trailer_mod_list, num_of_paintjobs, cabins_supported)
