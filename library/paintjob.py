@@ -308,9 +308,18 @@ def _should_overwrite_zip_entry(zip_file, entry_name, dst, keep_modified):
         return True
     if not os.path.exists(dst):
         return True
-    zip_bytes = zip_file.read(entry_name)
-    with open(dst, "rb") as f:
-        return f.read() == zip_bytes
+    zip_info = zip_file.getinfo(entry_name)
+    if os.path.getsize(dst) != zip_info.file_size:
+        return False
+    chunk_size = 1024 * 64
+    with zip_file.open(entry_name) as zip_entry, open(dst, "rb") as f:
+        while True:
+            zip_chunk = zip_entry.read(chunk_size)
+            file_chunk = f.read(chunk_size)
+            if zip_chunk != file_chunk:
+                return False
+            if not zip_chunk:
+                return True
 
 def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip, keep_modified=False):
     copy_square = False

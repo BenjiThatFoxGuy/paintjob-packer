@@ -7,7 +7,6 @@ import sys # Determining OS, and quitting Paint Job Packer
 import configparser # Reading vehicle database files, version info and l10n dictionary
 import os # Making folders and getting all vehicle database files
 import shutil # Copying files (checking write permission, all actual copying occurs in paintjob.py)
-import filecmp # Comparing files to detect user modifications
 import re # Checking for invalid characters in mod/paint job names
 import traceback # Handling unexpected errors
 import zipfile # Unzipping templates
@@ -1282,6 +1281,8 @@ class PackerApp:
                         keep_modified = True # Keep files that appear to have been modified
                     else:
                         folder_clear = False # Cancel - abort generation
+            if not folder_clear:
+                return
             try:
                 shutil.copyfile("library/placeholder-files/empty.dds", save_directory + "/empty.dds")
                 os.remove(save_directory + "/empty.dds")
