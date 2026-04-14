@@ -1,5 +1,6 @@
 import os # Making folders and renaming files
 import shutil # Copying files
+import filecmp # Comparing files
 import binascii # Hex-ifying strings for TOBJ files
 import codecs # Encoding TOBJ files
 import configparser # Reading vehicle database files
@@ -121,6 +122,17 @@ def generate_tobj(path):
 
 
 
+def _should_overwrite_file(src, dst, keep_modified):
+    """Return True if dst should be overwritten by src.
+    When keep_modified is True, an existing dst that differs from src is preserved."""
+    if not keep_modified:
+        return True
+    if not os.path.exists(dst):
+        return True
+    return filecmp.cmp(src, dst, shallow=False)
+
+
+
 # Loose files
 
 def make_manifest_sii(output_path, mod_version, mod_name, mod_author, workshop_upload):
@@ -142,8 +154,11 @@ def make_manifest_sii(output_path, mod_version, mod_name, mod_author, workshop_u
     file.write("}\n")
     file.close()
 
-def copy_mod_manager_image(output_path):
-    shutil.copyfile("library/placeholder-files/mod-manager.jpg", output_path + "/Mod_Manager_Image.jpg")
+def copy_mod_manager_image(output_path, keep_modified=False):
+    src = "library/placeholder-files/mod-manager.jpg"
+    dst = output_path + "/Mod_Manager_Image.jpg"
+    if _should_overwrite_file(src, dst, keep_modified):
+        shutil.copyfile(src, dst)
 
 def make_description(output_path, truck_list, truck_mod_list, bus_mod_list, trailer_list, trailer_mod_list, num_of_paintjobs):
     file = open(output_path + "/Mod_Manager_Description.txt", "w", encoding="utf-8")
@@ -173,11 +188,17 @@ def make_description(output_path, truck_list, truck_mod_list, bus_mod_list, trai
                 file.write("- {}'s {}\n".format(veh.display_author, veh.display_name.split(" [")[0]))
     file.close()
 
-def copy_versions_sii(output_path):
-    shutil.copyfile("library/placeholder-files/versions.sii", output_path + "/versions.sii")
+def copy_versions_sii(output_path, keep_modified=False):
+    src = "library/placeholder-files/versions.sii"
+    dst = output_path + "/versions.sii"
+    if _should_overwrite_file(src, dst, keep_modified):
+        shutil.copyfile(src, dst)
 
-def copy_workshop_image(output_path):
-    shutil.copyfile("library/placeholder-files/workshop.jpg", output_path + "/Workshop image.jpg")
+def copy_workshop_image(output_path, keep_modified=False):
+    src = "library/placeholder-files/workshop.jpg"
+    dst = output_path + "/Workshop image.jpg"
+    if _should_overwrite_file(src, dst, keep_modified):
+        shutil.copyfile(src, dst)
 
 
 
@@ -186,8 +207,11 @@ def copy_workshop_image(output_path):
 def make_material_folder(output_path):
     make_folder(output_path, "material/ui/accessory/")
 
-def copy_paintjob_icon(output_path, ingame_name):
-    shutil.copyfile("library/placeholder-files/icon.dds", output_path + "/material/ui/accessory/{} Icon.dds".format(ingame_name))
+def copy_paintjob_icon(output_path, ingame_name, keep_modified=False):
+    src = "library/placeholder-files/icon.dds"
+    dst = output_path + "/material/ui/accessory/{} Icon.dds".format(ingame_name)
+    if _should_overwrite_file(src, dst, keep_modified):
+        shutil.copyfile(src, dst)
 
 def make_paintjob_icon_tobj(output_path, ingame_name):
     file = open(output_path + "/material/ui/accessory/{} Icon.tobj".format(ingame_name), "wb")
@@ -277,27 +301,54 @@ def make_vehicle_folder(output_path, veh, ingame_name):
     else:
         make_folder(output_path, "vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
 
-def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip):
+def _should_overwrite_zip_entry(zip_file, entry_name, dst, keep_modified):
+    """Return True if a zip entry should be extracted to dst.
+    When keep_modified is True, an existing dst that differs from the zip entry is preserved."""
+    if not keep_modified:
+        return True
+    if not os.path.exists(dst):
+        return True
+    zip_info = zip_file.getinfo(entry_name)
+    if os.path.getsize(dst) != zip_info.file_size:
+        return False
+    chunk_size = 1024 * 64
+    with zip_file.open(entry_name) as zip_entry, open(dst, "rb") as f:
+        while True:
+            zip_chunk = zip_entry.read(chunk_size)
+            file_chunk = f.read(chunk_size)
+            if zip_chunk != file_chunk:
+                return False
+            if not zip_chunk:
+                return True
+
+def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip, keep_modified=False):
     copy_square = False
 
     try:
         if template_zip != None:
             if main_dds_name+".dds" in template_zip.namelist():
                 if veh.mod:
-                    template_zip.extract(main_dds_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
+                    dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author)
                 else:
-                    template_zip.extract(main_dds_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
+                    dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name)
+                if _should_overwrite_zip_entry(template_zip, main_dds_name+".dds", dst, keep_modified):
+                    template_zip.extract(main_dds_name+".dds", extract_dir)
             elif veh.type == "truck": # Largest cabin only paint jobs
                 if veh.alt_uvset:
                     largest_cabin_name = veh.cabins["a"][0][:-1]+", alt uvset).dds"
                 else:
                     largest_cabin_name = veh.cabins["a"][0]+".dds"
                 if veh.mod:
-                    template_zip.extract(largest_cabin_name, output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
-                    os.rename(output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}".format(veh.type, ingame_name, veh.name, veh.mod_author, largest_cabin_name), output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name))
+                    dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author)
                 else:
-                    template_zip.extract(largest_cabin_name, output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
-                    os.rename(output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}".format(veh.type, ingame_name, veh.name, largest_cabin_name), output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name))
+                    dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name)
+                if _should_overwrite_zip_entry(template_zip, largest_cabin_name, dst, keep_modified):
+                    template_zip.extract(largest_cabin_name, extract_dir)
+                    os.rename(os.path.join(extract_dir, largest_cabin_name), dst)
             else:
                 copy_square = True
         else:
@@ -306,31 +357,41 @@ def copy_main_dds(output_path, veh, ingame_name, main_dds_name, template_zip):
         copy_square = True
 
     if copy_square:
+        src = "library/placeholder-files/empty.dds"
         if veh.mod:
-            shutil.copyfile("library/placeholder-files/empty.dds", output_path + "/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name))
+            dst = output_path + "/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, main_dds_name)
         else:
-            shutil.copyfile("library/placeholder-files/empty.dds", output_path + "/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name))
+            dst = output_path + "/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, main_dds_name)
+        if _should_overwrite_file(src, dst, keep_modified):
+            shutil.copyfile(src, dst)
 
-def copy_accessory_dds(output_path, veh, ingame_name, game, template_zip):
+def copy_accessory_dds(output_path, veh, ingame_name, game, template_zip, keep_modified=False):
     for acc_name in veh.acc_dict:
         copy_square = False
 
         if template_zip != None:
             if acc_name+".dds" in template_zip.namelist():
                 if veh.mod:
-                    template_zip.extract(acc_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author))
+                    dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, acc_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{} [{}]".format(veh.type, ingame_name, veh.name, veh.mod_author)
                 else:
-                    template_zip.extract(acc_name+".dds", output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name))
+                    dst = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, acc_name)
+                    extract_dir = output_path+"/vehicle/{}/upgrade/paintjob/{}/{}".format(veh.type, ingame_name, veh.name)
+                if _should_overwrite_zip_entry(template_zip, acc_name+".dds", dst, keep_modified):
+                    template_zip.extract(acc_name+".dds", extract_dir)
             else:
                 copy_square = True
         else:
             copy_square = True
 
         if copy_square:
+            src = "library/placeholder-files/empty.dds"
             if veh.mod:
-                shutil.copyfile("library/placeholder-files/empty.dds", output_path + "/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, acc_name))
+                dst = output_path + "/vehicle/{}/upgrade/paintjob/{}/{} [{}]/{}.dds".format(veh.type, ingame_name, veh.name, veh.mod_author, acc_name)
             else:
-                shutil.copyfile("library/placeholder-files/empty.dds", output_path + "/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, acc_name))
+                dst = output_path + "/vehicle/{}/upgrade/paintjob/{}/{}/{}.dds".format(veh.type, ingame_name, veh.name, acc_name)
+            if _should_overwrite_file(src, dst, keep_modified):
+                shutil.copyfile(src, dst)
 
 def make_main_tobj(output_path, veh, ingame_name, main_dds_name):
     if veh.mod:
